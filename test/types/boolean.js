@@ -1,301 +1,609 @@
 'use strict';
 
-// Load modules
-
-const Lab = require('lab');
-const Code = require('code');
+const Code = require('@hapi/code');
+const Lab = require('@hapi/lab');
 const Joi = require('../..');
+
 const Helper = require('../helper');
 
-
-// Declare internals
 
 const internals = {};
 
 
-// Test shortcuts
-
-const lab = exports.lab = Lab.script();
-const describe = lab.describe;
-const it = lab.it;
-const expect = Code.expect;
+const { describe, it } = exports.lab = Lab.script();
+const { expect } = Code;
 
 
 describe('boolean', () => {
 
-    it('should throw an exception if arguments were passed.', (done) => {
+    it('should throw an exception if arguments were passed.', () => {
 
-        expect(
-          () => Joi.boolean('invalid argument.')
-        ).to.throw('Joi.boolean() does not allow arguments.');
-
-        done();
+        expect(() => Joi.boolean('invalid argument.')).to.throw('The boolean type does not allow arguments');
     });
 
-    it('converts boolean string to a boolean', (done) => {
+    it('converts boolean string to a boolean', () => {
 
         Helper.validate(Joi.boolean(), [
-            ['true', true, null, true],
-            ['false', true, null, false],
-            ['TrUe', true, null, true],
-            ['FalSe', true, null, false]
-        ], done);
+            ['true', true, true],
+            ['false', true, false],
+            ['TrUe', true, true],
+            ['FalSe', true, false]
+        ]);
     });
 
-    it('does not convert boolean string to a boolean in strict mode', (done) => {
+    it('does not convert boolean string to a boolean in strict mode', () => {
 
         Helper.validate(Joi.boolean().strict(), [
-            ['true', false, null, '"value" must be a boolean'],
-            ['false', false, null, '"value" must be a boolean'],
-            ['TrUe', false, null, '"value" must be a boolean'],
-            ['FalSe', false, null, '"value" must be a boolean']
-        ], done);
+            ['true', false, {
+                message: '"value" must be a boolean',
+                path: [],
+                type: 'boolean.base',
+                context: { label: 'value', value: 'true' }
+            }],
+            ['false', false, {
+                message: '"value" must be a boolean',
+                path: [],
+                type: 'boolean.base',
+                context: { label: 'value', value: 'false' }
+            }],
+            ['TrUe', false, {
+                message: '"value" must be a boolean',
+                path: [],
+                type: 'boolean.base',
+                context: { label: 'value', value: 'TrUe' }
+            }],
+            ['FalSe', false, {
+                message: '"value" must be a boolean',
+                path: [],
+                type: 'boolean.base',
+                context: { label: 'value', value: 'FalSe' }
+            }]
+        ]);
     });
 
-    it('errors on a number', (done) => {
+    it('errors on a number', () => {
 
         Helper.validate(Joi.boolean(), [
-            [1, false, null, '"value" must be a boolean'],
-            [0, false, null, '"value" must be a boolean'],
-            [2, false, null, '"value" must be a boolean']
-        ], done);
+            [1, false, {
+                message: '"value" must be a boolean',
+                path: [],
+                type: 'boolean.base',
+                context: { label: 'value', value: 1 }
+            }],
+            [0, false, {
+                message: '"value" must be a boolean',
+                path: [],
+                type: 'boolean.base',
+                context: { label: 'value', value: 0 }
+            }],
+            [2, false, {
+                message: '"value" must be a boolean',
+                path: [],
+                type: 'boolean.base',
+                context: { label: 'value', value: 2 }
+            }]
+        ]);
     });
 
-    describe('insensitive()', () => {
+    it('respects case for allow', () => {
 
-        it('should default to case insensitive', (done) => {
+        const schema = Joi.boolean().allow('X');
+        Helper.validate(schema, [
+            ['X', true],
+            ['x', false, '"value" must be a boolean']
+        ]);
+    });
+
+    describe('cast()', () => {
+
+        it('casts value to number', () => {
+
+            const schema = Joi.boolean().cast('number');
+            Helper.validate(schema, [
+                [true, true, 1],
+                [false, true, 0]
+            ]);
+        });
+
+        it('casts value to string', () => {
+
+            const schema = Joi.boolean().cast('string');
+            Helper.validate(schema, [
+                [true, true, 'true'],
+                [false, true, 'false']
+            ]);
+        });
+
+        it('ignores null', () => {
+
+            const schema = Joi.boolean().allow(null).cast('string');
+            Helper.validate(schema, [[null, true, null]]);
+        });
+
+        it('ignores string', () => {
+
+            const schema = Joi.boolean().allow('x').cast('string');
+            Helper.validate(schema, [['x', true, 'x']]);
+        });
+    });
+
+    describe('falsy()', () => {
+
+        it('works with additional falsy value', () => {
+
+            const rule = Joi.boolean().falsy('N');
+            Helper.validate(rule, [
+                ['N', true, false],
+                ['Y', false, {
+                    message: '"value" must be a boolean',
+                    path: [],
+                    type: 'boolean.base',
+                    context: { label: 'value', value: 'Y' }
+                }],
+                [true, true],
+                [false, true],
+                [null, false, {
+                    message: '"value" must be a boolean',
+                    path: [],
+                    type: 'boolean.base',
+                    context: { label: 'value', value: null }
+                }]
+            ]);
+        });
+
+        it('works with additional falsy arguments', () => {
+
+            const rule = Joi.boolean().falsy('N', 'Never');
+            Helper.validate(rule, [
+                ['N', true, false],
+                ['Never', true, false],
+                ['Y', false, {
+                    message: '"value" must be a boolean',
+                    path: [],
+                    type: 'boolean.base',
+                    context: { label: 'value', value: 'Y' }
+                }],
+                [null, false, {
+                    message: '"value" must be a boolean',
+                    path: [],
+                    type: 'boolean.base',
+                    context: { label: 'value', value: null }
+                }],
+                [true, true],
+                [false, true]
+            ]);
+        });
+
+        it('works with additional falsy statements', () => {
+
+            const rule = Joi.boolean().falsy('N').falsy('Never');
+            Helper.validate(rule, [
+                ['N', true, false],
+                ['Never', true, false],
+                ['Y', false, {
+                    message: '"value" must be a boolean',
+                    path: [],
+                    type: 'boolean.base',
+                    context: { label: 'value', value: 'Y' }
+                }],
+                [null, false, {
+                    message: '"value" must be a boolean',
+                    path: [],
+                    type: 'boolean.base',
+                    context: { label: 'value', value: null }
+                }],
+                [true, true],
+                [false, true]
+            ]);
+        });
+
+        it('errors on falsy without convert', () => {
+
+            const schema = Joi.boolean().falsy('n');
+            expect(schema.validate('n', { convert: false }).error).be.an.error('"value" must be a boolean');
+        });
+    });
+
+    describe('sensitive()', () => {
+
+        it('should default to case insensitive', () => {
 
             const schema = Joi.boolean().truthy('Y');
+            Helper.validate(schema, [['y', true, true]]);
+        });
+
+        it('should stick to case insensitive if called', () => {
+
+            const schema = Joi.boolean().truthy('Y').sensitive(false);
             expect(schema.validate('y').error).not.to.exist();
-            done();
         });
 
-        it('should stick to case insensitive if called', (done) => {
+        it('should be able to do strict comparison', () => {
 
-            const schema = Joi.boolean().truthy('Y').insensitive();
-            expect(schema.validate('y').error).not.to.exist();
-            done();
+            const schema = Joi.boolean().truthy('Y').sensitive();
+            Helper.validate(schema, [['y', false, {
+                message: '"value" must be a boolean',
+                path: [],
+                type: 'boolean.base',
+                context: { label: 'value', value: 'y' }
+            }]]);
         });
 
-        it('should be able to do strict comparison', (done) => {
-
-            const schema = Joi.boolean().truthy('Y').insensitive(false);
-            expect(schema.validate('y').error).to.be.an.error('"value" must be a boolean');
-            done();
-        });
-
-        it('should return the same instance if nothing changed', (done) => {
+        it('should return the same instance if nothing changed', () => {
 
             const insensitiveSchema = Joi.boolean();
-            expect(insensitiveSchema.insensitive()).to.shallow.equal(insensitiveSchema);
-            expect(insensitiveSchema.insensitive(false)).to.not.shallow.equal(insensitiveSchema);
+            expect(insensitiveSchema.sensitive(false)).to.shallow.equal(insensitiveSchema);
+            expect(insensitiveSchema.sensitive()).to.not.shallow.equal(insensitiveSchema);
 
-            const sensitiveSchema = Joi.boolean().insensitive(false);
-            expect(sensitiveSchema.insensitive(false)).to.shallow.equal(sensitiveSchema);
-            expect(sensitiveSchema.insensitive()).to.not.shallow.equal(sensitiveSchema);
-
-            done();
+            const sensitiveSchema = Joi.boolean().sensitive();
+            expect(sensitiveSchema.sensitive()).to.shallow.equal(sensitiveSchema);
+            expect(sensitiveSchema.sensitive(false)).to.not.shallow.equal(sensitiveSchema);
         });
 
-        it('converts boolean string to a boolean with a sensitive case', (done) => {
+        it('converts boolean string to a boolean with a sensitive case', () => {
 
-            Helper.validate(Joi.boolean().insensitive(false), [
-                ['true', true, null, true],
-                ['false', true, null, false],
-                ['TrUe', false, null, '"value" must be a boolean'],
-                ['FalSe', false, null, '"value" must be a boolean']
-            ], done);
+            Helper.validate(Joi.boolean().sensitive(), [
+                ['true', true, true],
+                ['false', true, false],
+                ['TrUe', false, {
+                    message: '"value" must be a boolean',
+                    path: [],
+                    type: 'boolean.base',
+                    context: { label: 'value', value: 'TrUe' }
+                }],
+                ['FalSe', false, {
+                    message: '"value" must be a boolean',
+                    path: [],
+                    type: 'boolean.base',
+                    context: { label: 'value', value: 'FalSe' }
+                }]
+            ]);
         });
 
     });
 
     describe('validate()', () => {
 
-        it('does not convert string values and validates', (done) => {
+        it('does not convert string values and validates', () => {
 
             const rule = Joi.boolean();
             Helper.validate(rule, [
-                ['1234', false, null, '"value" must be a boolean'],
+                ['1234', false, {
+                    message: '"value" must be a boolean',
+                    path: [],
+                    type: 'boolean.base',
+                    context: { label: 'value', value: '1234' }
+                }],
                 [false, true],
                 [true, true],
-                [null, false, null, '"value" must be a boolean'],
-                ['on', false, null, '"value" must be a boolean'],
-                ['off', false, null, '"value" must be a boolean'],
-                ['yes', false, null, '"value" must be a boolean'],
-                ['no', false, null, '"value" must be a boolean'],
-                ['1', false, null, '"value" must be a boolean'],
-                ['0', false, null, '"value" must be a boolean']
-            ], done);
+                [null, false, {
+                    message: '"value" must be a boolean',
+                    path: [],
+                    type: 'boolean.base',
+                    context: { label: 'value', value: null }
+                }],
+                ['on', false, {
+                    message: '"value" must be a boolean',
+                    path: [],
+                    type: 'boolean.base',
+                    context: { label: 'value', value: 'on' }
+                }],
+                ['off', false, {
+                    message: '"value" must be a boolean',
+                    path: [],
+                    type: 'boolean.base',
+                    context: { label: 'value', value: 'off' }
+                }],
+                ['yes', false, {
+                    message: '"value" must be a boolean',
+                    path: [],
+                    type: 'boolean.base',
+                    context: { label: 'value', value: 'yes' }
+                }],
+                ['no', false, {
+                    message: '"value" must be a boolean',
+                    path: [],
+                    type: 'boolean.base',
+                    context: { label: 'value', value: 'no' }
+                }],
+                ['1', false, {
+                    message: '"value" must be a boolean',
+                    path: [],
+                    type: 'boolean.base',
+                    context: { label: 'value', value: '1' }
+                }],
+                ['0', false, {
+                    message: '"value" must be a boolean',
+                    path: [],
+                    type: 'boolean.base',
+                    context: { label: 'value', value: '0' }
+                }]
+            ]);
         });
 
-        it('should handle work with required', (done) => {
+        it('works with required', () => {
 
             const rule = Joi.boolean().required();
             Helper.validate(rule, [
-                ['1234', false, null, '"value" must be a boolean'],
+                ['1234', false, {
+                    message: '"value" must be a boolean',
+                    path: [],
+                    type: 'boolean.base',
+                    context: { label: 'value', value: '1234' }
+                }],
                 [false, true],
                 [true, true],
-                [null, false, null, '"value" must be a boolean']
-            ], done);
+                [null, false, {
+                    message: '"value" must be a boolean',
+                    path: [],
+                    type: 'boolean.base',
+                    context: { label: 'value', value: null }
+                }]
+            ]);
         });
 
-        it('should handle work with allow', (done) => {
+        it('works with allow', () => {
 
             const rule = Joi.boolean().allow(false);
             Helper.validate(rule, [
-                ['1234', false, null, '"value" must be a boolean'],
+                ['1234', false, {
+                    message: '"value" must be a boolean',
+                    path: [],
+                    type: 'boolean.base',
+                    context: { label: 'value', value: '1234' }
+                }],
                 [false, true],
-                [null, false, null, '"value" must be a boolean']
-            ], done);
+                [null, false, {
+                    message: '"value" must be a boolean',
+                    path: [],
+                    type: 'boolean.base',
+                    context: { label: 'value', value: null }
+                }]
+            ]);
         });
 
-        it('should handle work with invalid', (done) => {
+        it('works with invalid', () => {
 
             const rule = Joi.boolean().invalid(false);
             Helper.validate(rule, [
-                ['1234', false, null, '"value" must be a boolean'],
-                [false, false, null, '"value" contains an invalid value'],
+                ['1234', false, {
+                    message: '"value" must be a boolean',
+                    path: [],
+                    type: 'boolean.base',
+                    context: { label: 'value', value: '1234' }
+                }],
+                [false, false, {
+                    message: '"value" contains an invalid value',
+                    path: [],
+                    type: 'any.invalid',
+                    context: { value: false, invalids: [false], label: 'value' }
+                }],
                 [true, true],
-                [null, false, null, '"value" must be a boolean']
-            ], done);
+                [null, false, {
+                    message: '"value" must be a boolean',
+                    path: [],
+                    type: 'boolean.base',
+                    context: { label: 'value', value: null }
+                }]
+            ]);
         });
 
-        it('should handle work with invalid and null allowed', (done) => {
+        it('works with invalid and null allowed', () => {
 
             const rule = Joi.boolean().invalid(false).allow(null);
             Helper.validate(rule, [
-                ['1234', false, null, '"value" must be a boolean'],
-                [false, false, null, '"value" contains an invalid value'],
+                ['1234', false, {
+                    message: '"value" must be a boolean',
+                    path: [],
+                    type: 'boolean.base',
+                    context: { label: 'value', value: '1234' }
+                }],
+                [false, false, {
+                    message: '"value" contains an invalid value',
+                    path: [],
+                    type: 'any.invalid',
+                    context: { value: false, invalids: [false], label: 'value' }
+                }],
                 [true, true],
                 [null, true]
-            ], done);
+            ]);
         });
 
-        it('should handle work with allow and invalid', (done) => {
+        it('works with allow and invalid', () => {
 
             const rule = Joi.boolean().invalid(true).allow(false);
             Helper.validate(rule, [
-                ['1234', false, null, '"value" must be a boolean'],
+                ['1234', false, {
+                    message: '"value" must be a boolean',
+                    path: [],
+                    type: 'boolean.base',
+                    context: { label: 'value', value: '1234' }
+                }],
                 [false, true],
-                [true, false, null, '"value" contains an invalid value'],
-                [null, false, null, '"value" must be a boolean']
-            ], done);
+                [true, false, {
+                    message: '"value" contains an invalid value',
+                    path: [],
+                    type: 'any.invalid',
+                    context: { value: true, invalids: [true], label: 'value' }
+                }],
+                [null, false, {
+                    message: '"value" must be a boolean',
+                    path: [],
+                    type: 'boolean.base',
+                    context: { label: 'value', value: null }
+                }]
+            ]);
         });
 
-        it('should handle work with allow, invalid, and null allowed', (done) => {
+        it('works with allow, invalid, and null allowed', () => {
 
             const rule = Joi.boolean().invalid(true).allow(false).allow(null);
             Helper.validate(rule, [
-                ['1234', false, null, '"value" must be a boolean'],
+                ['1234', false, {
+                    message: '"value" must be a boolean',
+                    path: [],
+                    type: 'boolean.base',
+                    context: { label: 'value', value: '1234' }
+                }],
                 [false, true],
-                [true, false, null, '"value" contains an invalid value'],
+                [true, false, {
+                    message: '"value" contains an invalid value',
+                    path: [],
+                    type: 'any.invalid',
+                    context: { value: true, invalids: [true], label: 'value' }
+                }],
                 [null, true]
-            ], done);
+            ]);
         });
 
-        it('should handle work with additional truthy value', (done) => {
+        it('works with required, null allowed, and both additional truthy and falsy values', () => {
 
-            const rule = Joi.boolean().truthy('Y');
+            const rule = Joi.boolean().truthy('Y', 'Si', 1).falsy('N', 'Never', 0).allow(null).required();
             Helper.validate(rule, [
-                ['Y', true],
+                ['N', true, false],
+                ['Never', true, false],
+                ['Y', true, true],
+                ['y', true, true],
+                ['Si', true, true],
                 [true, true],
                 [false, true],
-                ['N', false, null, '"value" must be a boolean'],
-                [null, false, null, '"value" must be a boolean']
-            ], done);
-        });
-
-        it('should handle work with additional truthy array', (done) => {
-
-            const rule = Joi.boolean().truthy(['Y', 'Si']);
-            Helper.validate(rule, [
-                ['Si', true],
-                ['Y', true],
-                [true, true],
-                [false, true],
-                ['N', false, null, '"value" must be a boolean'],
-                [null, false, null, '"value" must be a boolean']
-            ], done);
-        });
-
-        it('should handle work with additional falsy value', (done) => {
-
-            const rule = Joi.boolean().falsy('N');
-            Helper.validate(rule, [
-                ['N', true],
-                ['Y', false, null, '"value" must be a boolean'],
-                [true, true],
-                [false, true],
-                [null, false, null, '"value" must be a boolean']
-            ], done);
-        });
-
-        it('should handle work with additional falsy array', (done) => {
-
-            const rule = Joi.boolean().falsy(['N', 'Never']);
-            Helper.validate(rule, [
-                ['N', true],
-                ['Never', true],
-                ['Y', false, null, '"value" must be a boolean'],
-                [null, false, null, '"value" must be a boolean'],
-                [true, true],
-                [false, true]
-            ], done);
-        });
-
-        it('should handle work with required, null allowed, and both additional truthy and falsy values', (done) => {
-
-            const rule = Joi.boolean().truthy(['Y', 'Si', 1]).falsy(['N', 'Never', 0]).allow(null).required();
-            Helper.validate(rule, [
-                ['N', true],
-                ['Never', true],
-                ['Y', true],
-                ['y', true],
-                ['Si', true],
-                [true, true],
-                [false, true],
-                [1, true],
-                [0, true],
+                [1, true, true],
+                [0, true, false],
                 [null, true],
-                ['M', false, null, '"value" must be a boolean'],
-                ['Yes', false, null, '"value" must be a boolean']
-            ], done);
+                ['M', false, {
+                    message: '"value" must be a boolean',
+                    path: [],
+                    type: 'boolean.base',
+                    context: { label: 'value', value: 'M' }
+                }],
+                ['Yes', false, {
+                    message: '"value" must be a boolean',
+                    path: [],
+                    type: 'boolean.base',
+                    context: { label: 'value', value: 'Yes' }
+                }]
+            ]);
         });
 
-        it('should handle concatenated schema', (done) => {
+        it('should handle concatenated schema', () => {
 
             const a = Joi.boolean().truthy('yes');
             const b = Joi.boolean().falsy('no');
 
             Helper.validate(a, [
-                ['yes', true],
-                ['no', false, null, '"value" must be a boolean']
+                ['yes', true, true],
+                ['no', false, {
+                    message: '"value" must be a boolean',
+                    path: [],
+                    type: 'boolean.base',
+                    context: { label: 'value', value: 'no' }
+                }]
             ]);
 
             Helper.validate(b, [
-                ['no', true],
-                ['yes', false, null, '"value" must be a boolean']
+                ['no', true, false],
+                ['yes', false, {
+                    message: '"value" must be a boolean',
+                    path: [],
+                    type: 'boolean.base',
+                    context: { label: 'value', value: 'yes' }
+                }]
             ]);
 
             Helper.validate(a.concat(b), [
-                ['yes', true],
-                ['no', true]
-            ], done);
+                ['yes', true, true],
+                ['no', true, false]
+            ]);
         });
 
-        it('should describe truthy and falsy values', (done) => {
+        it('should describe truthy and falsy values', () => {
 
             const schema = Joi.boolean().truthy('yes').falsy('no').required().describe();
             expect(schema).to.equal({
                 type: 'boolean',
                 flags: {
-                    presence: 'required',
-                    insensitive: true
+                    presence: 'required'
                 },
-                truthy: [true, 'yes'],
-                falsy : [false, 'no']
+                truthy: ['yes'],
+                falsy: ['no']
             });
-            done();
+        });
+    });
+
+    describe('truthy()', () => {
+
+        it('works with additional truthy value', () => {
+
+            const rule = Joi.boolean().truthy('Y');
+            Helper.validate(rule, [
+                ['Y', true, true],
+                [true, true],
+                [false, true],
+                ['N', false, {
+                    message: '"value" must be a boolean',
+                    path: [],
+                    type: 'boolean.base',
+                    context: { label: 'value', value: 'N' }
+                }],
+                [null, false, {
+                    message: '"value" must be a boolean',
+                    path: [],
+                    type: 'boolean.base',
+                    context: { label: 'value', value: null }
+                }]
+            ]);
+        });
+
+        it('works with additional truthy arguments', () => {
+
+            const rule = Joi.boolean().truthy('Y', 'Si');
+            Helper.validate(rule, [
+                ['Si', true, true],
+                ['Y', true, true],
+                [true, true],
+                [false, true],
+                ['N', false, {
+                    message: '"value" must be a boolean',
+                    path: [],
+                    type: 'boolean.base',
+                    context: { label: 'value', value: 'N' }
+                }],
+                [null, false, {
+                    message: '"value" must be a boolean',
+                    path: [],
+                    type: 'boolean.base',
+                    context: { label: 'value', value: null }
+                }]
+            ]);
+        });
+
+        it('works with multiple truthy arguments', () => {
+
+            const rule = Joi.boolean().truthy('Y').truthy('Si');
+            Helper.validate(rule, [
+                ['Si', true, true],
+                ['Y', true, true],
+                [true, true],
+                [false, true],
+                ['N', false, {
+                    message: '"value" must be a boolean',
+                    path: [],
+                    type: 'boolean.base',
+                    context: { label: 'value', value: 'N' }
+                }],
+                [null, false, {
+                    message: '"value" must be a boolean',
+                    path: [],
+                    type: 'boolean.base',
+                    context: { label: 'value', value: null }
+                }]
+            ]);
+        });
+
+        it('errors on truthy without convert', () => {
+
+            const schema = Joi.boolean().truthy('y');
+            Helper.validate(schema, { convert: false }, [['y', false, '"value" must be a boolean']]);
         });
     });
 });

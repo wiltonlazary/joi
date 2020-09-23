@@ -1,96 +1,112 @@
 'use strict';
 
-// Load modules
+const Code = require('@hapi/code');
 
-const Code = require('code');
-const Joi = require('../');
-
-
-// Declare internals
 
 const internals = {};
 
 
-// Test shortcuts
-
-const expect = Code.expect;
+const { expect } = Code;
 
 
-exports.validate = function (schema, config, callback) {
+exports.skip = Symbol('skip');
 
-    return exports.validateOptions(schema, config, null, callback);
+
+exports.equal = function (a, b) {
+
+    try {
+        expect(a).to.equal(b, { deepFunction: true, skip: ['$_temp', '$_root'] });
+    }
+    catch (err) {
+        console.error(err.stack);
+        err.at = internals.thrownAt();      // Adjust error location to test
+        throw err;
+    }
 };
 
 
-exports.validateOptions = function (schema, config, options, callback) {
+exports.validate = function (schema, prefs, tests) {
+
+    if (!tests) {
+        tests = prefs;
+        prefs = null;
+    }
 
     try {
-        const compiled = Joi.compile(schema);
-        for (let i = 0; i < config.length; ++i) {
+        expect(schema.$_root.build(schema.describe())).to.equal(schema, { deepFunction: true, skip: ['$_temp'] });
 
-            const item = config[i];
-            const input = item[0];
-            const shouldValidate = item[1];
-            const validationOptions = item[2];
-            const expectedValueOrError = item[3];
-
-            if (!shouldValidate) {
-                expect(expectedValueOrError, 'Failing tests messages must be tested').to.exist();
-            }
-            const result = Joi.validate(input, compiled, validationOptions || options);
-
-            const err = result.error;
-            const value = result.value;
-
-            if (err !== null && shouldValidate) {
-                console.log(err);
+        for (const test of tests) {
+            const [input, pass, expected] = test;
+            if (!pass) {
+                expect(expected, 'Failing tests messages must be tested').to.exist();
             }
 
-            if (err === null && !shouldValidate) {
+            const { error: errord, value: valued } = schema.validate(input, Object.assign({ debug: true }, prefs));
+            const { error, value } = schema.validate(input, prefs);
+
+            expect(error).to.equal(errord);
+            expect(value).to.equal(valued);
+
+            if (error &&
+                pass) {
+
+                console.log(error);
+            }
+
+            if (!error &&
+                !pass) {
+
                 console.log(input);
             }
 
-            expect(err === null).to.equal(shouldValidate);
+            expect(!error).to.equal(pass);
 
-            if (item.length >= 4) {
-                if (shouldValidate) {
-                    expect(value).to.equal(expectedValueOrError);
+            if (test.length === 2) {
+                if (pass) {
+                    expect(input).to.equal(value);
                 }
-                else {
-                    const message = expectedValueOrError.message || expectedValueOrError;
-                    if (message instanceof RegExp) {
-                        expect(err.message).to.match(message);
-                    }
-                    else {
-                        expect(err.message).to.equal(message);
-                    }
 
-                    if (expectedValueOrError.details) {
-                        expect(err.details).to.equal(expectedValueOrError.details);
-                    }
+                continue;
+            }
+
+            if (pass) {
+                if (expected !== exports.skip) {
+                    expect(value).to.equal(expected);
                 }
+
+                continue;
+            }
+
+            if (typeof expected === 'string') {
+                expect(error.message).to.equal(expected);
+                continue;
+            }
+
+            if (schema._preferences && schema._preferences.abortEarly === false ||
+                prefs && prefs.abortEarly === false) {
+
+                expect(error.message).to.equal(expected.message);
+                expect(error.details).to.equal(expected.details);
+            }
+            else {
+                expect(error.details).to.have.length(1);
+                expect(error.message).to.equal(error.details[0].message);
+                expect(error.details[0]).to.equal(expected);
             }
         }
     }
     catch (err) {
-
         console.error(err.stack);
-        // Reframe the error location, we don't care about the helper
-        err.at = internals.thrownAt();
+        err.at = internals.thrownAt();      // Adjust error location to test
         throw err;
-    }
-
-    if (callback) {
-        callback();
     }
 };
 
-// Imported from Code
 
 internals.thrownAt = function () {
 
     const error = new Error();
-    const frame = error.stack.replace(error.toString(), '').split('\n').slice(1).filter((line) => line.indexOf(__filename) === -1)[0];
+    const frame = error.stack.replace(error.toString(), '').split('\n').slice(1).filter((line) => !line.includes(__filename))[0];
     const at = frame.match(/^\s*at \(?(.+)\:(\d+)\:(\d+)\)?$/);
     return {
         filename: at[1],
