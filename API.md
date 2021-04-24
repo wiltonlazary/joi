@@ -778,8 +778,11 @@ const schema = Joi.string().min(4).example('abcd');
 #### `any.external(method, [description])`
 
 Adds an external validation rule where:
-- `method` - an async or sync function with signature `function(value)` which can either return
-  a replacement value, `undefined` to indicate no change, or throw an error.
+- `method` - an async or sync function with signature `function(value, helpers)` which can either
+  return a replacement value, `undefined` to indicate no change, or throw an error, where:
+    - `value` - a clone of the object containing the value being validated.
+    - `helpers` - an object with the following helpers:
+        - `prefs` - the current preferences.
 - `description` - optional string used to document the purpose of the method.
 
 Note that external validation rules are only called after the all other validation rules for the
@@ -1120,7 +1123,7 @@ Validates a value using the current schema and options where:
       - `false` - remove any label prefix from error message, including the `""`.
     - `language` - the preferred language code for error messages. The value is matched against keys at the root of the `messages` object, and then the error code as a child key of that. Can be a reference to the value, global context, or local context which is the root value passed to the validation function. Note that references to the value are usually not what you want as they move around the value structure relative to where the error happens. Instead, either use the global  context, or the absolute value (e.g. `Joi.ref('/variable')`);
     - `render` - when `false`, skips rendering error templates. Useful when error messages are generated elsewhere to save processing time. Defaults to `true`.
-    - `stack` - when `true`, the main error will possess a stack trace, otherwise it will be disabled. Defaults to `false` for performances reasons. Has no effect on platforms other than V8/node.js as it uses the [Stack trace API](https://v8.dev/docs/stack-trace-api).
+    - `stack` - when `true`, the main error will possess a stack trace, otherwise it will be disabled. Defaults to `false` for performance reasons. Has no effect on platforms other than V8/node.js as it uses the [Stack trace API](https://v8.dev/docs/stack-trace-api).
     - `wrap` - overrides the way values are wrapped (e.g. `[]` around arrays, `""` around labels and variables prefixed with `:`). Each key can be set to a string with one (same character before and after the value) or two characters (first character before and second character after), or `false` to disable wrapping:
         - `label` - the characters used around `{#label}` references. Defaults to `'"'`.
         - `array` - the characters used around array values. Defaults to `'[]'`.
@@ -1531,7 +1534,7 @@ const schema = Joi.array().items(Joi.string().valid('not allowed').forbidden(), 
 const schema = Joi.array().items(Joi.string().label('My string').required(), Joi.number().required()); // If this fails it can result in `[ValidationError: "value" does not contain [My string] and 1 other required value(s)]`
 ```
 
-Possible validation errors: [`array.excludes`](#arrayexcludes), [`array.includesRequiredBoth`], [`array.includesRequiredKnowns`], [`array.includesRequiredUnknowns`], [`array.includes`](#arrayincludes)
+Possible validation errors: [`array.excludes`](#arrayexcludes), [`array.includesRequiredBoth`](#arrayincludesrequiredboth), [`array.includesRequiredKnowns`](#arrayincludesrequiredknowns), [`array.includesRequiredUnknowns`](#arrayincludesrequiredunknowns), [`array.includes`](#arrayincludes)
 
 #### `array.length(limit)`
 
@@ -2040,6 +2043,14 @@ Initializes the schema after constructions for cases where the schema has to be 
 then initialized. If `ref` was not passed to the constructor, `link.ref()` must be called prior to usaged.
 
 Will throw an error during validation if left uninitialized (e.g. `Joi.link()` called without a link and `link.ref()` not called).
+
+```js
+const schema = Joi.object({
+    a: [Joi.string(), Joi.number()],
+    b: Joi.link().ref('#type.a')
+})
+    .id('type');
+```
 
 #### `link.concat(schema)`
 
@@ -3097,11 +3108,82 @@ Possible validation errors: [`symbol.map`](#symbolmap)
 
 ## Extensions
 
-The [`extend()`](#extendextensions) method adds custom types to **joi**. Extensions can be :
-- a single extension object
-- a factory function generating an extension object
+Before writing your own extensions, it is useful to understand how input values are processed. When `validate()` is called, Joi does the following:
 
-Full documentation is upcoming.
+- Generates a new schema if the current one contains dynamic construction rules such as `when()` or `link()`.
+- Merges the validation options with the ones passed via [`any.prefs()`](#anyprefsoptions---aliases-preferences-options).
+- Returns the result if caching is enabled and the input value is found in the cache. 
+- Runs the `prepare` method defined below. If a validation error is returned, the process will be aborted regardless of `abortEarly`.
+- Coerces the input value using the `coerce` method defined below if `convert` is enabled. If a validation error is returned, the process will be aborted regardless of `abortEarly`.
+- If the input alue matches the schema passed to [`any.empty()`](#anyemptyschema)), it is converted to `undefined`.
+- Validates presences.
+- Validates allowed/valid/invalid values.
+- Runs base validation using the `validate` method defined below. If a validation error is returned, the process will be aborted regardless of `abortEarly`.
+- Runs validation rules.
+
+**Note that extending schemas do not change the order in which Joi performs the above steps**
+
+The [`extend()`](#extendextensions) method adds custom types to **joi**. Extensions can be:
+- a single extension object.
+- a factory function generating an extension object.
+
+Where:
+- `type`: The type of schema. Can be a string, or a regular expression that matches multiple types. 
+- `base`: The base schema to extend from. This key is forbidden when `type` is a regular expression.
+- `messages`: A hash of error codes and their messages. To interpolate dynamic values, use the [template syntax](#template-syntax). 
+- `flags`: A hash of flag names and their definitions where:
+    - `default`: The default value of the flag. When `describe()` is called and the current flag matches this default value, it will be omitted entirely from the description.
+- `prepare`: A function with signature `function (value, helpers) {}` that prepares the input value (for example, converts `,` to `.` to support multiple decimal representations) where:
+    - `value`: The input value.
+    - `helpers`: [Validation helpers](#validation-helpers)
+
+    Must return an object with one of the following keys:
+    - `value`: The modified value.
+    - `errors`: Validation error(s) generated by `$_createError()` or `helpers.error()`.
+
+    If `errors` is defined, validation will abort regardless of `abortEarly`. Refer to the validation process above for further information.
+- `coerce`: A function with signature `function (value, helpers) {}` that coerces the input value where:
+    - `value`: The input value.
+    - `helpers`: [Validation helpers](#validation-helpers)
+
+    You can also pass an object where:
+    - `from`: The type(s) to convert from. Can be a single string or an array of strings. Joi will only run `method` if the value `typeof` of the input value is equal to one of the provided values.
+    - `method`: A function with signature `function (value, helpers)` that coerces the input value where:
+        - `value`: The input value.
+        - `helpers`: [Validation helpers](#validation-helpers)
+
+    Must return an object with one of the following keys:
+    - `value`: The modified value.
+    - `errors`: Validation error(s) generated by `$_createError()` or `helpers.error()`.
+
+    If `errors` is defined, validation will abort regardless of `abortEarly`. Refer to the validation process above for further information.
+- `validate`: A function with signature `function (value, helpers) {}` that performs base validation on the input value where:
+    - `value`: The input value.
+    - `helpers`: [Validation helpers](#validation-helpers)
+
+    Must return an object with one of the following keys:
+    - `value`: The modified value.
+    - `errors`: Validation error(s) generated by `$_createError()` or `helpers.error()`.
+
+    If `errors` is defined, validation will abort regardless of `abortEarly`. Refer to the validation process above for further information.
+- `rules`: A hash of validation rule names and their implementation where:
+    - `alias`: Aliases of the rule. Can be a string or an array of strings.
+    - `args`: An array of argument names or an object that define the parameters the rule will accept where:
+        - `name`: The argument name.
+        - `ref`: Whether this argument allows references. Joi will resolve them before passing to `validate`. Defaults to `false`.
+        - `assert`: A function of signature `function (value) {}` that validates the argument by returning a boolean. Also accepts a Joi schema. This key is required if `ref` is set to `true`.
+        - `normalize`: A function of signature `function (value) {}` that normalizes the argument before passing it to `assert`.
+        - `message`: A message to throw if `assert` is a function. This key is forbidden if `assert` is a schema.
+    - `convert`: Whether this is a dual rule that converts the input value and validates it at the same time. Defaults to `false`.
+    - `manifest`: Whether this rule should be outputted in the schema's description. Defaults to `true`.
+    - `method`: The method that will be attached onto the schema instance. Useful when you need to set flags. If set to `undefined`, Joi will default to a function that when called will add the rule to the rules queue. If set to `false`, the no method will be added to the instance.
+    - `multi`: Whether this rule can be invoked multiple times. Defaults to `false`.
+    - `validate`: A function of signature `function (value, helpers, args, rule)` that validates the input value where:
+        - `value`: The input value.
+        - `helpers`: [Validation helpers](#validation-helpers)
+        - `args`: Resolved and validated arguments mapped by their names.
+        - `rule`: The rule definitions passed to `$_addRule` left untouched. Useful if you need access to the raw arguments before validation. 
+- `overrides`: A hash of method names and their overridden implementation. To refer to the parent method, use [`$_parent()`](#_parentmethod-args)
 
 ```js
 const Joi = require('joi');
@@ -3208,15 +3290,41 @@ const schema = custom.object({
 });
 ```
 
+### Validation helpers
+
+- `original`: The original value passed untouched to `validate()`.
+- `prefs`: The prepared validation options.
+- `schema`: The reference to the current schema. Useful if you need to use any of the [Advanced functions](#advanced-functions).
+- `state`: The current validation state. See [Validation state](#state)
+- `error`: A function with signature `function (code, local, localState = currentState) {}` similar to [`$_createError()`](#_createerrorcode-value-local-state-prefs-options) but with the current value, validation options, current state passed where:
+    - `code`: The error code. 
+    - `local`: Local context used to interpolate the message.
+    - `localState`: The localized state.
+- `errorsArray`: A function that creates an array that can be recognised by Joi as a valid error array. **Note that using a native JS array can cause Joi to output incorrect results.**
+- `warn`: TODO
+- `message`: TODO
+
+### Validation state
+
+The validation state is an object that contains information about the validation process such as the current key name of the value and its ancestors. The following methods are supported:
+
+- `localize()`: TODO
+- `nest()`: TODO
+- `shadow()`: TODO
+- `snapshot()`: TODO
+- `restore()`: TODO
+
 ### Advanced functions
 
 #### $_root
 
-TODO
+A reference to the current Joi instance. Useful when you want access to the **extended instance**, not the default Joi module.
 
 #### $_parent(method, ...args)
 
-TODO
+Calls the original method before overriding, similar to `super.method()` when overriding class methods where:
+- `method`: The name of the parent method.
+- `...args`: The arguments passed directly to the parent method.
 
 #### $_temp
 
@@ -3228,23 +3336,38 @@ TODO
 
 #### $_addRule(options)
 
-TODO
+Adds a rule to the rules queue where:
+
+- `options`: A rule name string or rule options where:
+    - `name`: The name of the rule.
+    - `args`: The arguments to be processed.
+    - `method`: The name of another rule to reuse.
+    
+    You can also pass extra properties and they will be accessible within the `rule` argument of the `validate` method.
 
 #### $_compile(schema, options)
 
-TODO
+Compiles a literal schema definition to a Joi schema object where:
+- `schema`: The schema to compile.
+- `options`: TODO
 
 #### $_createError(code, value, local, state, prefs, options)
 
-TODO
+Creates a Joi validation error where:
+- `code`: The error code.
+- `value`: The current value being validated.
+- `local`: Local context used to interpolate the message.
+- `state`: [Validation state](#validation-state).
+- `prefs`: Prepared validation options.
+- `options`: Error options. TODO
 
 #### $_getFlag(name)
 
-TODO
+Gets a flag named `name`.
 
 #### $_getRule(name)
 
-TODO
+Gets a single (`multi` set to `false`) rule named `name`.
 
 #### $_mapLabels(path)
 
@@ -3280,11 +3403,20 @@ TODO
 
 #### $_setFlag(name, value, options)
 
-TODO
+Sets a flag where:
+- `name`: The flag name to set.
+- `value`: The value to set the flag to.
+- `options`: Optional options where:
+    - `clone`: Whether to clone the schema. Defaults to `true`. Only set to `false` if the schema has already been cloned before. 
 
 #### $_validate(value, state, prefs)
 
-TODO
+Performs validation against the current schema without the extra overhead of merging validation options to a default set of values where:
+- `value`: The input value to validate.
+- `state`: [Validation state](#validation-state)
+- `prefs`: The prepared validation options.
+
+**Use this method to perform validation against nested schemas instead of `validate()`**
 
 
 ## Errors
